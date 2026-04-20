@@ -16,6 +16,7 @@ from .auth import (
 )
 
 load_dotenv()
+ACCESS_TOKEN_EXPIRE_MINUTES = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Lab 4"),
@@ -82,3 +83,35 @@ def signup(payload:UserCreate,db:Session = Depends(get_db)):
         username = payload.username,
         password = hashed_password
     )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+@app.post("/login",response_model=Token)
+def login(
+    form_data : OAuth2PasswordRequestForm = Depends(),
+    db : Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.username == form_data.email)
+
+    if not user or not verify_password(form_data.password,user.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid username or password",
+            header="WWW-Authenticate":"Bearer"
+        )
+    
+    access_token_expire = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub":user.email},
+        expire_delta=access_token_expire
+    )
+
+    return {"access_token":access_token,"token_type":"bearer"}
+
+
+
+
