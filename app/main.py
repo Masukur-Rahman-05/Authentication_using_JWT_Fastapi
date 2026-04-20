@@ -16,7 +16,7 @@ from .auth import (
 )
 
 load_dotenv()
-ACCESS_TOKEN_EXPIRE_MINUTES = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES",30))
 
 app = FastAPI(
     title=os.getenv("APP_NAME", "FastAPI Lab 4"),
@@ -34,9 +34,9 @@ def get_db():
     finally:
         db.close()
 
-def create_current_user(
+def get_current_user(
         credentials: HTTPAuthorizationCredentials = Depends(security),
-        db:Session = Depends(SessionLocal)
+        db:Session = Depends(get_db)
 ) -> User :
     credentials_exception = HTTPException(
         status_code = status.HTTP_401_UNAUTHORIZED,
@@ -52,7 +52,7 @@ def create_current_user(
     
 
     user = db.query(User).filter(User.email == email).first()
-    if not User:
+    if not user:
         raise credentials_exception
     
     return user
@@ -95,13 +95,13 @@ def login(
     form_data : OAuth2PasswordRequestForm = Depends(),
     db : Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.username == form_data.email)
+    user = db.query(User).filter(User.username == form_data.username).first()
 
     if not user or not verify_password(form_data.password,user.password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid username or password",
-            header="WWW-Authenticate":"Bearer"
+            headers={"WWW-Authenticate":"Bearer"}
         )
     
     access_token_expire = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -113,5 +113,17 @@ def login(
     return {"access_token":access_token,"token_type":"bearer"}
 
 
+@app.get("/profile",response_model=UserOut)
+def get_user(current_user: User = Depends(get_current_user)):
+    return current_user
 
+
+
+@app.get("/users",response_model=list[UserOut])
+def get_users(
+    current_user:User = Depends(get_current_user),
+    db:Session = Depends(get_db)
+):
+    users = db.query(User).all()
+    return users
 
